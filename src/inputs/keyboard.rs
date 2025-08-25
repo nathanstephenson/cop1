@@ -1,7 +1,7 @@
-use console::Term;
+use console::{Key, Term};
 use std::io::Write;
 
-fn wait_for_input(input_reader: fn(console::Key)) {
+fn wait_for_input(input_reader: fn(Key)) {
     let term = Term::stdout();
 
     loop {
@@ -16,19 +16,19 @@ fn wait_for_input(input_reader: fn(console::Key)) {
     }
 }
 
-fn reader() -> fn(console::Key) {
-    fn reader_fun(message: console::Key) {
+fn reader() -> fn(Key) {
+    fn reader_fun(message: Key) {
         let mut stdout = std::io::stdout();
         let mut val = String::new();
         match message {
-            console::Key::Char(c) => val.push(c),
-            console::Key::Enter => val.push_str("[Enter]"),
-            console::Key::Backspace => val.push_str("[Backspace]"),
-            console::Key::ArrowUp => val.push_str("[ArrowUp]"),
-            console::Key::ArrowDown => val.push_str("[ArrowDown]"),
-            console::Key::ArrowLeft => val.push_str("[ArrowLeft]"),
-            console::Key::ArrowRight => val.push_str("[ArrowRight]"),
-            console::Key::Escape => val.push_str("[Esc]"),
+            Key::Char(c) => val.push(c),
+            Key::Enter => val.push_str("[Enter]"),
+            Key::Backspace => val.push_str("[Backspace]"),
+            Key::ArrowUp => val.push_str("[ArrowUp]"),
+            Key::ArrowDown => val.push_str("[ArrowDown]"),
+            Key::ArrowLeft => val.push_str("[ArrowLeft]"),
+            Key::ArrowRight => val.push_str("[ArrowRight]"),
+            Key::Escape => val.push_str("[Esc]"),
             _ => val.push_str("[Other]"),
         }
         let _ = write!(stdout, "You pressed: {}", val);
