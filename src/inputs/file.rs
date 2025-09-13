@@ -1,5 +1,7 @@
 use creek::{ReadDiskStream, SymphoniaDecoder};
 
+use crate::thread_manager::SendFunc;
+
 // Open a read stream.
 fn open_stream(file_path: &str) -> Option<ReadDiskStream<SymphoniaDecoder>> {
     let read_result = ReadDiskStream::<SymphoniaDecoder>::new(
@@ -45,20 +47,6 @@ fn open_stream(file_path: &str) -> Option<ReadDiskStream<SymphoniaDecoder>> {
     };
 
     Some(stream)
-
-    // (Send `read_stream` to the audio processing thread)
-
-    // Open a write stream.
-
-    // WriteDiskStream::<WavEncoder<wav_bit_depth::Float32>>::new(
-    //     "./test_files/wav_f32_stereo_out.wav", // Path to file.
-    //     2,                                     // The number of channels in the file
-    //     44100,                                 // The sample rate of the file
-    //     Default::default(),                    // Use default write stream options.
-    // )
-    // .unwrap();
-
-    // (Send `write_stream` to the audio processing thread)
 }
 
 fn read_data(
@@ -74,26 +62,32 @@ fn read_data(
         }
     };
 
-    println!("frames: {}", data.num_frames());
+    // println!("frames: {}", data.num_frames());
     Some(data)
 }
 
 // In the realtime audio processing thread:
-fn read_audio_data(
-    read_disk_stream: &mut ReadDiskStream<SymphoniaDecoder>,
+fn read_audio_data<'a>(
+    read_disk_stream: &'a mut ReadDiskStream<SymphoniaDecoder>,
     chunk_size: usize,
     current_offset: usize,
-    accept_data: fn(Vec<&[f32]>),
+    accept_data: SendFunc<Vec<Vec<f32>>>,
 ) -> Option<()> {
     // Update read client and check if it is ready.
     //
     // NOTE: You should avoid using `unwrap()` in realtime code.
+    let _ = match read_disk_stream.block_until_ready() {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Failed to wait for read stream to be ready: {}", e);
+        }
+    };
     if !read_disk_stream.is_ready().unwrap() {
         // If the look-ahead buffer is still buffering, We can choose to either continue
         // reading (which will return silence), or pause playback until the buffer is filled.
     }
 
-    let done = current_offset >= read_disk_stream.block_size();
+    let done = current_offset >= read_disk_stream.info().num_frames;
     if done {
         // If there is no more audio to read, we can choose to either loop back to the beginning
         // of the file, or stop playback.
@@ -102,17 +96,19 @@ fn read_audio_data(
     }
 
     let data = read_data(read_disk_stream, chunk_size);
-    match data {
-        Some(d) => {
-            let num_channels = d.num_channels();
-            let mut channels = Vec::with_capacity(num_channels);
-            for c in 0..num_channels {
-                channels.push(d.read_channel(c));
-            }
-            accept_data(channels);
-        }
+    let d = match data {
+        Some(d) => d,
         None => return None,
+    };
+
+    let num_channels = d.num_channels();
+    let mut channels = Vec::with_capacity(num_channels);
+    for c in 0..num_channels {
+        let a = Vec::from(d.read_channel(c));
+        channels.push(a);
     }
+    let _ = accept_data(channels);
+    // read_disk_stream.cache(0, current_offset);
 
     read_audio_data(
         read_disk_stream,
@@ -127,28 +123,16 @@ fn read_audio_data(
     // assert_eq!(read_dist_stream.playhead(), 50000);
 
     // Send stereo data to be written to disk.
-
-    // write_disk_stream.write(
-    //     &[read_data.read_channel(0), read_data.read_channel(1)]
-    // ).unwrap();
 }
 
-fn accept_data(data: Vec<&[f32]>) {
-    println!("Received {} channels of data.", data.len());
-    for (i, channel) in data.iter().enumerate() {
-        println!("Channel {}: {} samples", i, channel.len());
-    }
-}
-pub fn start_and_read() -> bool {
+pub fn start_and_read(accept: SendFunc<Vec<Vec<f32>>>) -> () {
     let stream_result = open_stream("/home/nathan/Downloads/darling_i.mp3");
     let mut stream = match stream_result {
         Some(s) => s,
         None => {
             println!("Failed to open stream.");
-            return false;
+            return;
         }
     };
-    read_audio_data(&mut stream, 512, 0, accept_data);
-
-    true
+    read_audio_data(&mut stream, 8192, 0, accept);
 }
